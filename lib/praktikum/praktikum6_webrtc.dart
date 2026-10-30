@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class Praktikum6Screen extends StatefulWidget {
   const Praktikum6Screen({super.key});
@@ -10,6 +11,8 @@ class Praktikum6Screen extends StatefulWidget {
 
 class _Praktikum6ScreenState extends State<Praktikum6Screen> {
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
+  bool _isCameraOpen = false;
+  String _statusMessage = 'Kamera belum diaktifkan';
 
   @override
   void initState() {
@@ -22,10 +25,45 @@ class _Praktikum6ScreenState extends State<Praktikum6Screen> {
   }
 
   Future<void> _getUserMedia() async {
-    final Map<String, dynamic> mediaConstraints = {'audio': true, 'video': true};
-    final stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-    _localRenderer.srcObject = stream;
-    setState(() {});
+    // 1. Minta Izin Runtime untuk Kamera dan Mikrofon
+    var cameraStatus = await Permission.camera.request();
+    var microphoneStatus = await Permission.microphone.request();
+
+    if (cameraStatus.isDenied || microphoneStatus.isDenied) {
+      setState(() {
+        _statusMessage = 'Izin kamera atau mikrofon ditolak!';
+      });
+      return;
+    }
+
+    if (cameraStatus.isPermanentlyDenied || microphoneStatus.isPermanentlyDenied) {
+      setState(() {
+        _statusMessage = 'Izin ditolak permanen. Buka pengaturan HP untuk mengizinkan.';
+      });
+      openAppSettings();
+      return;
+    }
+
+    // 2. Jika izin diberikan, panggil getUserMedia
+    final Map<String, dynamic> mediaConstraints = {
+      'audio': true,
+      'video': {
+        'facingMode': 'user',
+      }
+    };
+
+    try {
+      final stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+      _localRenderer.srcObject = stream;
+      setState(() {
+        _isCameraOpen = true;
+        _statusMessage = 'Stream kamera berhasil dibuka';
+      });
+    } catch (e) {
+      setState(() {
+        _statusMessage = 'Gagal mengakses media: $e';
+      });
+    }
   }
 
   @override
@@ -40,9 +78,31 @@ class _Praktikum6ScreenState extends State<Praktikum6Screen> {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          ElevatedButton(onPressed: _getUserMedia, child: const Text('Buka Kamera (getUserMedia)')),
+          ElevatedButton.icon(
+            onPressed: _getUserMedia,
+            icon: const Icon(Icons.videocam),
+            label: const Text('Buka Kamera (getUserMedia)'),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _statusMessage,
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 12),
-          Expanded(child: RTCVideoView(_localRenderer, mirror: true)),
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black12,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: _isCameraOpen
+                  ? RTCVideoView(_localRenderer, mirror: true)
+                  : const Center(
+                      child: Text('Video Feed Belum Aktif'),
+                    ),
+            ),
+          ),
         ],
       ),
     );
